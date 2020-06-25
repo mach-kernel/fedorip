@@ -9,6 +9,8 @@
 import argparse
 import json
 import logging
+import random
+import subprocess
 
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -24,6 +26,10 @@ sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(me
 log.addHandler(sh)
 
 FR_FEDORA_API_URL = 'https://src.fedoraproject.org/api/0'
+pkg_queue = []
+
+###############################################################################
+# fedora API REST bindings
 
 def fedora_search_pkgs(pattern, page=1, short=1):
   query = {
@@ -60,7 +66,25 @@ def dump_pkg_list(pattern):
   f = open('rippums.json', 'w')
   f.write(json.dumps(packages))
   exit(0)
+
+###############################################################################
+# 
+
+def run_fedorip(package):
+  process = subprocess.Popen(['python', './fedorip.py'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  while not process.poll():
+    print(process.stderr.readline())
+  return process.stdout.readlines()
     
+def rip_event_loop():
+  while len(pkg_queue):
+    select = random.randrange(0, len(pkg_queue))
+    package = pkg_queue[select]
+    # rip_results = run_fedorip(package)
+  
+def start(path):
+   f = open(path, 'r')
+   pkg_queue.extend(f.read())
 
 def parse_args():
   parser = argparse.ArgumentParser(description='rippums!!!!')
@@ -84,3 +108,5 @@ if __name__ == '__main__':
   args = parse_args()
   if args.fetch_pattern:
     dump_pkg_list(args.fetch_pattern)
+  elif args.pkg_list_path:
+    start(args.pkg_list_path)

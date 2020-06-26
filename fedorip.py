@@ -14,6 +14,9 @@ import sys
 import logging
 import json
 
+from handlers.spec_success import handle_get_outrpms
+from handlers.spec_failed import handle_perl_missing_dep
+
 class Fedorip:
   state = {}
   log = logging.getLogger('fedorip')
@@ -23,11 +26,11 @@ class Fedorip:
   FR_TMP_PATH = '/var/tmp/fedorip'
 
   spec_fail_handlers = [
-    # handle_perl_missing_dep,
+    handle_perl_missing_dep,
   ]
 
   spec_success_handlers = [
-    # handle_get_outrpms
+    handle_get_outrpms
   ]
 
   spec_fixes = [
@@ -36,7 +39,7 @@ class Fedorip:
 
   def __init__(self):
     self.state = {
-      'pkg_stack': [],
+      'pkg_queue': [],
       'pkg_success': [],
       'pkg_fail': [],
       'rpms_out': [],
@@ -53,7 +56,7 @@ class Fedorip:
     shutil.rmtree(self.FR_TMP_PATH)
     os.mkdir(self.FR_TMP_PATH)
 
-    self.state['pkg_stack'].append(sys.argv[1])
+    self.state['pkg_queue'].append(sys.argv[1])
     self.rip_event_loop()
 
     print(json.dumps(self.state))
@@ -97,7 +100,7 @@ class Fedorip:
     return True
 
   def handle_build(self, pkg_name):
-    spec_path = glob.glob(
+    spec_paths = glob.glob(
       '%s/packages/%s/SPECS/*.spec' % (self.FR_RSE_REPO_PATH, pkg_name)
     )
 
@@ -107,31 +110,31 @@ class Fedorip:
       update=True
     )
 
-    if not len(spec_path):
-      raise FileNotFoundError(('Cannot find spec in %s', spec_path))
+    if not len(spec_paths):
+      raise FileNotFoundError(('Cannot find spec in %s', spec_paths))
 
     for sed_expr in self.spec_fixes:
-      sed_cmd = '/usr/sgug/bin/sed -ie "%s" %s' % (sed_expr, spec_path[0])
+      sed_cmd = '/usr/sgug/bin/sed -ie "%s" %s' % (sed_expr, spec_paths[0])
       self.log.info(subprocess.getoutput(sed_cmd))
 
-    build_command = '/usr/sgug/bin/rpmbuild --undefine=_disable_source_fetch --nocheck -ba %s' % spec_path[0]
+    build_command = '/usr/sgug/bin/rpmbuild --undefine=_disable_source_fetch --nocheck -ba %s' % spec_paths[0]
     rpmstatus, rpmoutput = subprocess.getstatusoutput(build_command)
     self.log.info(rpmoutput)
 
     if (rpmstatus == 0):
       self.state['pkg_success'].append(pkg_name)
       for handler in self.spec_success_handlers:
-        handler(spec_path[0], pkg_name, rpmoutput)
+        handler(fedorip, spec_paths[0], pkg_name, rpmoutput)
     else:
       self.state['pkg_fail'].append(pkg_name)
       self.log.warning('%s build failed -- missing dependencies?' % pkg_name)
       for handler in self.spec_fail_handlers:
-        handler(pkg_name, rpmoutput)
+        handler(self, pkg_name, rpmoutput)
 
   def rip_event_loop(self):
-    while len(self.state['pkg_stack']) > 0:
-      remain = len(self.state['pkg_stack'])
-      current_pkg = self.state['pkg_stack'].pop()
+    while len(self.state['pkg_queue']) > 0:
+      remain = len(self.state['pkg_queue'])
+      current_pkg = self.state['pkg_queue'].pop()
       self.log.info('Working on %s, %d left' % (current_pkg, remain))
       try_build = self.rip_from_fedora_vcs(current_pkg)
       if try_build:

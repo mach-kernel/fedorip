@@ -27,6 +27,8 @@ sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(me
 log.addHandler(sh)
 
 FR_FEDORA_API_URL = 'https://src.fedoraproject.org/api/0'
+FR_RSE_REPO_PATH = os.environ.get('FR_RSE_REPO_PATH')
+
 pkg_queue = []
 
 ###############################################################################
@@ -82,11 +84,17 @@ def run_fedorip(package):
     print(process.stderr.readline())
   return json.loads(process.stdout.readlines())
 
+def filter_and_save(success_rpms, pkg_list_path):
+  pkg_queue = filter(lambda p: p['name'] not in success_rpms, pkg_queue)
+  f = open(pkg_list_path, 'w')
+  f.write(json.dumps(pkg_queue))
+  log.info('Saved queue progress, only %d left!' % len(pkg_queue))
+
 def install_rpms(fedorip_out):
   success_rpms = []
 
   for rpm in fedorip_out['rpms']:
-    status, output = subprocess.run([
+    status, output = subprocess.getstatusoutput([
       '/usr/sgug/bin/sudo',
       '/usr/sgug/bin/rpm',
       '-ivh',
@@ -98,19 +106,46 @@ def install_rpms(fedorip_out):
       success_rpms.append(rpm)
 
   log.info('Successfully installed %d' % len(success_rpms))
-  pkg_queue = filter(lambda p: p['name'] not in success_rpms, pkg_queue)
-  success_rpms
+  return success_rpms
 
-def rip_event_loop():
+###############################################################################
+# VCS
+
+def commit_and_push(rip_results):
+  for installed in rip_results['installed']:
+    status, output = subprocess.getstatusoutput([
+      '/usr/sgug/bin/git',
+      '--git-dir',
+      '%s/.git' % (FR_RSE_REPO_PATH),
+      'add',
+      installed['spec']
+    ])
+
+    print(output)
+  
+  status, output = subprocess.getstatusoutput([
+    '/usr/sgug/bin/git',
+    '--git-dir',
+    '%s/.git' % (FR_RSE_REPO_PATH),
+    'commit',
+    "-vm'%s'" % json.dumps(rip_results)
+  ])
+
+
+def rip_event_loop(pkg_list_path):
   while len(pkg_queue):
     select = random.randrange(0, len(pkg_queue))
     package = pkg_queue[select]
     rip_results = run_fedorip(package)
     rip_results['installed'] = install_rpms(rip_results)
+    filter_and_save(pkg_list_path, rip_results['installed'])
+    commit_and_push(rip_results)
   
 def start(path):
    f = open(path, 'r')
-   pkg_queue.extend(f.read())
+   pkg_queue.extend(json.loads(f.read()))
+   f.close()
+   rip_event_loop(path)
 
 def parse_args():
   parser = argparse.ArgumentParser(description='rippums!!!!')

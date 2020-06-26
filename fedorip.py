@@ -33,6 +33,9 @@ pkg_stack = []
 pkg_success = []
 pkg_fail = []
 
+rpms_out = []
+srpms_out = []
+
 ###############################################################################
 # Handle failed builds
 
@@ -45,11 +48,29 @@ def handle_perl_missing_dep(pkg_name, rpm_output):
       pkg_stack.append(pkg_name)
     pkg_stack.extend(mapped_deps)
 
-# Enable by placing here
 spec_fail_handlers = [
   handle_perl_missing_dep,
 ]
 ###############################################################################
+
+###############################################################################
+# Handle successful builds
+
+def handle_get_outrpms(pkg_name, rpm_output):
+  outfiles = re.findall(r'[^\/]+\.rpm$', rpm_output)
+  if not len(outfiles):
+    return
+
+  log.info('Found %d output RPMs' % len(outfiles))
+  for outrpm in outfiles:
+    if '.src.rpm' in outrpm:
+      srpms_out.append(outrpm)
+    else:
+      rpms_out.append(outrpm)
+
+spec_success_handlers = [
+  handle_get_outrpms
+]
 
 ###############################################################################
 # Apply sed rules to specs before running rpmbuild
@@ -116,6 +137,8 @@ def handle_build(pkg_name):
   
   if (rpmstatus == 0):
     pkg_success.append(pkg_name)
+    for handler in spec_success_handlers:
+      handler(pkg_name, rpmoutput)
   else:
     pkg_fail.append(pkg_name)
     log.warning('%s build failed -- missing dependencies?' % pkg_name)
@@ -143,7 +166,9 @@ if __name__ == '__main__':
 
   result = {
     'success': pkg_success,
-    'fail': pkg_fail
+    'fail': pkg_fail,
+    'rpms': rpms_out,
+    'srpms': srpms_out
   }
 
   print(json.dumps(result))

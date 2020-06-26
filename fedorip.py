@@ -55,17 +55,23 @@ spec_fail_handlers = [
 ###############################################################################
 # Handle successful builds
 
-def handle_get_outrpms(pkg_name, rpm_output):
+def handle_get_outrpms(spec_path, pkg_name, rpm_output):
   outfiles = re.findall(r'(?<=Wrote: ).+\.rpm$', rpm_output)
   if not len(outfiles):
     return
 
   log.info('Found %d output RPMs' % len(outfiles))
   for outrpm in outfiles:
+    meta = {
+      'name': pkg_name,
+      'path': outrpm,
+      'spec': spec_path
+    }
+
     if '.src.rpm' in outrpm:
-      srpms_out.append(outrpm)
+      srpms_out.append(meta)
     else:
-      rpms_out.append(outrpm)
+      rpms_out.append(meta)
 
 spec_success_handlers = [
   handle_get_outrpms
@@ -137,7 +143,7 @@ def handle_build(pkg_name):
   if (rpmstatus == 0):
     pkg_success.append(pkg_name)
     for handler in spec_success_handlers:
-      handler(pkg_name, rpmoutput)
+      handler(spec_path, pkg_name, rpmoutput)
   else:
     pkg_fail.append(pkg_name)
     log.warning('%s build failed -- missing dependencies?' % pkg_name)

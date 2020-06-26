@@ -11,6 +11,7 @@ import json
 import logging
 import random
 import subprocess
+import os
 
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -68,19 +69,44 @@ def dump_pkg_list(pattern):
   exit(0)
 
 ###############################################################################
-# 
+# RPMs
 
 def run_fedorip(package):
-  process = subprocess.Popen(['python', './fedorip.py'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  process = subprocess.Popen(
+    ['python', './fedorip.py'],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    env=os.environ.copy()
+  )
   while not process.poll():
     print(process.stderr.readline())
-  return process.stdout.readlines()
-    
+  return json.loads(process.stdout.readlines())
+
+def install_rpms(fedorip_out):
+  success_rpms = []
+
+  for rpm in fedorip_out['rpms']:
+    status, output = subprocess.run([
+      '/usr/sgug/bin/sudo',
+      '/usr/sgug/bin/rpm',
+      '-ivh',
+      '--nodeps',
+      rpm['path']
+    ]);
+
+    if status == 0:
+      success_rpms.append(rpm)
+
+  log.info('Successfully installed %d' % len(success_rpms))
+  pkg_queue = filter(lambda p: p['name'] not in success_rpms, pkg_queue)
+  success_rpms
+
 def rip_event_loop():
   while len(pkg_queue):
     select = random.randrange(0, len(pkg_queue))
     package = pkg_queue[select]
-    # rip_results = run_fedorip(package)
+    rip_results = run_fedorip(package)
+    rip_results['installed'] = install_rpms(rip_results)
   
 def start(path):
    f = open(path, 'r')

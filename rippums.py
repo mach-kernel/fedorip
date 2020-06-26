@@ -75,37 +75,44 @@ def dump_pkg_list(pattern):
 
 def run_fedorip(package):
   process = subprocess.Popen(
-    ['python', './fedorip.py'],
+    ['/usr/sgug/bin/python', './fedorip.py', package['name']],
     stdout=subprocess.PIPE,
     stderr=subprocess.PIPE,
-    env=os.environ.copy()
+    env=os.environ.copy(),
+    cwd=os.getcwd()
   )
-  while not process.poll():
-    print(process.stderr.readline())
-  return json.loads(process.stdout.readlines())
+  while process.poll() is None:
+    print(process.stderr.readline().decode(), end='')
+  return json.loads(process.stdout.read())
 
 def filter_and_save(success_rpms, pkg_list_path):
-  pkg_queue = filter(lambda p: p['name'] not in success_rpms, pkg_queue)
+  success_names = map(lambda srpm: srpm['name'], success_rpms)
+  newqueue = list(filter(lambda p: p['name'] not in success_names, pkg_queue))
+  pkg_queue.clear()
+  pkg_queue.extend(newqueue)
   f = open(pkg_list_path, 'w')
   f.write(json.dumps(pkg_queue))
+  f.close()
   log.info('Saved queue progress, only %d left!' % len(pkg_queue))
 
 def install_rpms(fedorip_out):
   success_rpms = []
 
   for rpm in fedorip_out['rpms']:
-    status, output = subprocess.getstatusoutput([
+    status, output = subprocess.getstatusoutput(' '.join([
       '/usr/sgug/bin/sudo',
       '/usr/sgug/bin/rpm',
       '-ivh',
       '--nodeps',
       rpm['path']
-    ]);
+    ]));
+
+    log.info(output)
 
     if status == 0:
       success_rpms.append(rpm)
 
-  log.info('Successfully installed %d' % len(success_rpms))
+  log.info('Installed %d' % len(success_rpms))
   return success_rpms
 
 ###############################################################################
@@ -113,23 +120,43 @@ def install_rpms(fedorip_out):
 
 def commit_and_push(rip_results):
   for installed in rip_results['installed']:
-    status, output = subprocess.getstatusoutput([
+    status, output = subprocess.getstatusoutput(' '.join([
       '/usr/sgug/bin/git',
       '--git-dir',
       '%s/.git' % (FR_RSE_REPO_PATH),
+      '--work-tree',
+      FR_RSE_REPO_PATH,
       'add',
       installed['spec']
-    ])
+    ]))
 
-    print(output)
+    log.info(output)
   
-  status, output = subprocess.getstatusoutput([
+  status, output = subprocess.getstatusoutput(' '.join([
     '/usr/sgug/bin/git',
     '--git-dir',
     '%s/.git' % (FR_RSE_REPO_PATH),
+    '--work-tree',
+    FR_RSE_REPO_PATH,
     'commit',
     "-vm'%s'" % json.dumps(rip_results)
-  ])
+  ]))
+
+  log.info(output)
+
+  status, output = subprocess.getstatusoutput(' '.join([
+    '/usr/sgug/bin/git',
+    '--git-dir',
+    '%s/.git' % (FR_RSE_REPO_PATH),
+    '--work-tree',
+    FR_RSE_REPO_PATH,
+    'push',
+    '-u',
+    'origin',
+    'HEAD'
+  ]))
+
+  log.info(output)
 
 
 def rip_event_loop(pkg_list_path):
@@ -138,7 +165,7 @@ def rip_event_loop(pkg_list_path):
     package = pkg_queue[select]
     rip_results = run_fedorip(package)
     rip_results['installed'] = install_rpms(rip_results)
-    filter_and_save(pkg_list_path, rip_results['installed'])
+    filter_and_save(rip_results['installed'], pkg_list_path)
     commit_and_push(rip_results)
   
 def start(path):

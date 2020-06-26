@@ -14,175 +14,139 @@ import sys
 import logging
 import json
 
-log = logging.getLogger('fedorip')
-log.setLevel(logging.DEBUG)
+class Fedorip:
+  state = {}
+  log = logging.getLogger('fedorip')
+  FR_RSE_REPO_PATH = os.environ.get('FR_RSE_REPO_PATH')
+  FR_RPMHOME_PATH = os.environ.get('FR_RPMHOME_PATH')
+  FR_FEDORA_CLONE_URI = 'https://src.fedoraproject.org/rpms'
+  FR_TMP_PATH = '/var/tmp/fedorip'
 
-sh = logging.StreamHandler()
-sh.setLevel(logging.INFO)
-sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+  spec_fail_handlers = [
+    # handle_perl_missing_dep,
+  ]
 
-log.addHandler(sh)
+  spec_success_handlers = [
+    # handle_get_outrpms
+  ]
 
-# Configuration
-FR_RSE_REPO_PATH = os.environ.get('FR_RSE_REPO_PATH')
-FR_RPMHOME_PATH = os.environ.get('FR_RPMHOME_PATH')
-FR_FEDORA_CLONE_URI = 'https://src.fedoraproject.org/rpms'
-FR_TMP_PATH = '/var/tmp/fedorip'
+  spec_fixes = [
+    "s/perl(:MODULE_COMPAT.*$/perl(:MODULE_COMPAT_%(perl -V:version | sed 's,[^0-9^\.]*,,g'))/"
+  ]
 
-pkg_stack = []
-pkg_success = []
-pkg_fail = []
-
-rpms_out = []
-srpms_out = []
-
-###############################################################################
-# Handle failed builds
-
-def handle_perl_missing_dep(pkg_name, rpm_output):
-  missing_deps = re.findall(r'(?<=perl\()(\S+(?=\)))', rpm_output)
-  if len(missing_deps):
-    log.info('Found %d missing dependencies: %s' % (len(missing_deps), str(missing_deps)))
-    mapped_deps = map(lambda d: 'perl-' + d.replace('::', '-'), missing_deps)
-    if pkg_name not in pkg_fail:
-      pkg_stack.append(pkg_name)
-    for extend_dep in mapped_deps:
-      if extend_dep not in pkg_fail:
-        pkg_stack.append(extend_dep)
-
-spec_fail_handlers = [
-  handle_perl_missing_dep,
-]
-
-###############################################################################
-# Handle successful builds
-
-def handle_get_outrpms(spec_path, pkg_name, rpm_output):
-  outfiles = re.findall(r'(?<=Wrote: ).+\.rpm', rpm_output)
-  if not len(outfiles):
-    return
-
-  log.info('Found %d output RPMs' % len(outfiles))
-  for outrpm in outfiles:
-    meta = {
-      'name': pkg_name,
-      'path': outrpm,
-      'spec': spec_path
+  def __init__(self):
+    self.state = {
+      'pkg_stack': [],
+      'pkg_success': [],
+      'pkg_fail': [],
+      'rpms_out': [],
+      'srpms_out': []
     }
 
-    if '.src.rpm' in outrpm:
-      srpms_out.append(meta)
+    self.log.setLevel(logging.DEBUG)
+    sh = logging.StreamHandler()
+    sh.setLevel(logging.INFO)
+    sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    self.log.addHandler(sh)
+
+  def from_args(self):
+    shutil.rmtree(self.FR_TMP_PATH)
+    os.mkdir(self.FR_TMP_PATH)
+
+    self.state['pkg_stack'].append(sys.argv[1])
+    self.rip_event_loop()
+
+    result = {
+      'success': pkg_success,
+      'fail': pkg_fail,
+      'rpms': rpms_out,
+      'srpms': srpms_out
+    }
+
+    print(json.dumps(result))
+    exit(0)
+
+  def rip_from_fedora_vcs(self, pkg_name):
+    url = '%s/%s.git' % (self.FR_FEDORA_CLONE_URI, pkg_name)
+    target_path = '%s/%s' % (self.FR_TMP_PATH, pkg_name)
+    spec_path = '%s/packages/%s/SPECS/' % (self.FR_RSE_REPO_PATH, pkg_name)
+    source_path = '%s/packages/%s/SOURCES/' % (self.FR_RSE_REPO_PATH, pkg_name)
+
+    if not (os.path.exists(target_path)):
+      clcmd = '/usr/sgug/bin/git clone %s %s' % (url, target_path)
+      clstatus, clout = subprocess.getstatusoutput(clcmd)
+
+      if clstatus:
+        return False
+
+    if not (os.path.exists(spec_path)):
+      os.makedirs(spec_path)
+    
+    if not (os.path.exists(source_path)):
+      os.makedirs(source_path)
+
+    for spec_file in glob.glob('%s/%s/**/*.spec' % (self.FR_TMP_PATH, pkg_name), recursive=True):
+      file_util.copy_file(
+        spec_file,
+        spec_path,
+        update=True
+      )
+
+    for source_file in glob.glob('%s/%s/**/*' % (self.FR_TMP_PATH, pkg_name), recursive=True):
+      if '.spec' in source_file:
+        continue
+      file_util.copy_file(
+        source_file,
+        source_path,
+        update=True
+      )
+
+    return True
+
+  def handle_build(self, pkg_name):
+    spec_path = glob.glob(
+      '%s/packages/%s/SPECS/*.spec' % (self.FR_RSE_REPO_PATH, pkg_name)
+    )
+
+    dir_util.copy_tree(
+      '%s/packages/%s/SOURCES' % (self.FR_RSE_REPO_PATH, pkg_name),
+      '%s/SOURCES/' % self.FR_RPMHOME_PATH,
+      update=True
+    )
+
+    if not len(spec_path):
+      raise FileNotFoundError(('Cannot find spec in %s', spec_path))
+
+    for sed_expr in spec_fixes:
+      sed_cmd = '/usr/sgug/bin/sed -ie "%s" %s' % (sed_expr, spec_path[0])
+      self.log.info(subprocess.getoutput(sed_cmd))
+
+    build_command = '/usr/sgug/bin/rpmbuild --undefine=_disable_source_fetch --nocheck -ba %s' % spec_path[0]
+    rpmstatus, rpmoutput = subprocess.getstatusoutput(build_command)
+    self.log.info(rpmoutput)
+
+    if (rpmstatus == 0):
+      self.state['pkg_success'].append(pkg_name)
+      for handler in self.spec_success_handlers:
+        handler(spec_path[0], pkg_name, rpmoutput)
     else:
-      rpms_out.append(meta)
+      self.state['pkg_fail'].append(pkg_name)
+      self.log.warning('%s build failed -- missing dependencies?' % pkg_name)
+      for handler in self.spec_fail_handlers:
+        handler(pkg_name, rpmoutput)
 
-spec_success_handlers = [
-  handle_get_outrpms
-]
+  def rip_event_loop(self):
+    while len(self.state['pkg_stack']) > 0:
+      remain = len(self.state['pkg_stack'])
+      current_pkg = self.state['pkg_stack'].pop()
+      self.log.info('Working on %s, %d left' % (current_pkg, remain))
+      try_build = self.rip_from_fedora_vcs(current_pkg)
+      if try_build:
+        self.handle_build(current_pkg)
 
-###############################################################################
-# Apply sed rules to specs before running rpmbuild
-
-spec_fixes = [
-  "s/perl(:MODULE_COMPAT.*$/perl(:MODULE_COMPAT_%(perl -V:version | sed 's,[^0-9^\.]*,,g'))/"
-]
-
-###############################################################################
-
-def rip_from_fedora_vcs(pkg_name):
-  url = '%s/%s.git' % (FR_FEDORA_CLONE_URI, pkg_name)
-  target_path = '%s/%s' % (FR_TMP_PATH, pkg_name)
-  spec_path = '%s/packages/%s/SPECS/' % (FR_RSE_REPO_PATH, pkg_name)
-  source_path = '%s/packages/%s/SOURCES/' % (FR_RSE_REPO_PATH, pkg_name)
-
-  if not (os.path.exists(target_path)):
-    clcmd = '/usr/sgug/bin/git clone %s %s' % (url, target_path)
-    clstatus, clout = subprocess.getstatusoutput(clcmd)
-
-    if clstatus:
-      return False
-
-  if not (os.path.exists(spec_path)):
-    os.makedirs(spec_path)
-  
-  if not (os.path.exists(source_path)):
-    os.makedirs(source_path)
-
-  for spec_file in glob.glob('%s/%s/**/*.spec' % (FR_TMP_PATH, pkg_name), recursive=True):
-    file_util.copy_file(
-      spec_file,
-      spec_path,
-      update=True
-    )
-
-  for source_file in glob.glob('%s/%s/**/*' % (FR_TMP_PATH, pkg_name), recursive=True):
-    if '.spec' in source_file:
-      continue
-    file_util.copy_file(
-      source_file,
-      source_path,
-      update=True
-    )
-
-  return True
-
-def handle_build(pkg_name):
-  spec_path = glob.glob(
-    '%s/packages/%s/SPECS/*.spec' % (FR_RSE_REPO_PATH, pkg_name)
-  )
-
-  dir_util.copy_tree(
-    '%s/packages/%s/SOURCES' % (FR_RSE_REPO_PATH, pkg_name),
-    '%s/SOURCES/' % FR_RPMHOME_PATH,
-    update=True
-  )
-
-  if not len(spec_path):
-    raise FileNotFoundError(('Cannot find spec in %s', spec_path))
-
-  for sed_expr in spec_fixes:
-    sed_cmd = '/usr/sgug/bin/sed -ie "%s" %s' % (sed_expr, spec_path[0])
-    log.info(subprocess.getoutput(sed_cmd))
-
-  build_command = '/usr/sgug/bin/rpmbuild --undefine=_disable_source_fetch --nocheck -ba %s' % spec_path[0]
-  rpmstatus, rpmoutput = subprocess.getstatusoutput(build_command)
-  log.info(rpmoutput)
-
-  if (rpmstatus == 0):
-    pkg_success.append(pkg_name)
-    for handler in spec_success_handlers:
-      handler(spec_path[0], pkg_name, rpmoutput)
-  else:
-    pkg_fail.append(pkg_name)
-    log.warning('%s build failed -- missing dependencies?' % pkg_name)
-    for handler in spec_fail_handlers:
-      handler(pkg_name, rpmoutput)
-
-def rip_event_loop():
-  while len(pkg_stack) > 0:
-    remain = len(pkg_stack)
-    current_pkg = pkg_stack.pop()
-    log.info('Working on %s, %d left' % (current_pkg, remain))
-    try_build = rip_from_fedora_vcs(current_pkg)
-    if try_build:
-      handle_build(current_pkg)
 
 if __name__ == '__main__':
   if len(sys.argv) <= 1:
     print('ERROR: Provide src.fedoraproject.org repo pkg-name')
     exit(1)
-
-  shutil.rmtree(FR_TMP_PATH)
-  os.mkdir(FR_TMP_PATH)
-
-  pkg_stack.append(sys.argv[1])
-  rip_event_loop()
-
-  result = {
-    'success': pkg_success,
-    'fail': pkg_fail,
-    'rpms': rpms_out,
-    'srpms': srpms_out
-  }
-
-  print(json.dumps(result))
-  exit(0)
+  Fedorip().from_args()

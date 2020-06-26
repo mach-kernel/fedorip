@@ -56,14 +56,7 @@ class Fedorip:
     self.state['pkg_stack'].append(sys.argv[1])
     self.rip_event_loop()
 
-    result = {
-      'success': pkg_success,
-      'fail': pkg_fail,
-      'rpms': rpms_out,
-      'srpms': srpms_out
-    }
-
-    print(json.dumps(result))
+    print(json.dumps(self.state))
     exit(0)
 
   def rip_from_fedora_vcs(self, pkg_name):
@@ -117,7 +110,7 @@ class Fedorip:
     if not len(spec_path):
       raise FileNotFoundError(('Cannot find spec in %s', spec_path))
 
-    for sed_expr in spec_fixes:
+    for sed_expr in self.spec_fixes:
       sed_cmd = '/usr/sgug/bin/sed -ie "%s" %s' % (sed_expr, spec_path[0])
       self.log.info(subprocess.getoutput(sed_cmd))
 

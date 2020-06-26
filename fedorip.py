@@ -51,13 +51,12 @@ def handle_perl_missing_dep(pkg_name, rpm_output):
 spec_fail_handlers = [
   handle_perl_missing_dep,
 ]
-###############################################################################
 
 ###############################################################################
 # Handle successful builds
 
 def handle_get_outrpms(pkg_name, rpm_output):
-  outfiles = re.findall(r'[^\/]+\.rpm$', rpm_output)
+  outfiles = re.findall(r'(?<=Wrote: ).+\.rpm$', rpm_output)
   if not len(outfiles):
     return
 

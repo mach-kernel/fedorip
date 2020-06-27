@@ -13,166 +13,130 @@ import random
 import subprocess
 import os
 
-from urllib.parse import urlencode
-from urllib.request import urlopen
-from urllib.error import HTTPError
+from fedorip import Fedorip
+from fedora_api_client import all_fedora_pkgs
 
-log = logging.getLogger('rippums')
-log.setLevel(logging.DEBUG)
+class Rippums:
+  FR_RSE_REPO_PATH = os.environ.get('FR_RSE_REPO_PATH')
+  pkg_queue = []
+  log = logging.getLogger('rippums')
 
-sh = logging.StreamHandler()
-sh.setLevel(logging.INFO)
-sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+  def __init__(self):
+    self.log.setLevel(logging.DEBUG)
+    sh = logging.StreamHandler()
+    sh.setLevel(logging.INFO)
+    sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    self.log.addHandler(sh)
 
-log.addHandler(sh)
+  def dump_pkg_list(self, pattern):
+    packages = []
+    for frame in all_fedora_pkgs(pattern):
+      packages.extend(frame['projects'])
+    
+    log.info('Got %d packages' % len(packages))
+    f = open('rippums.json', 'w')
+    f.write(json.dumps(packages))
+    exit(0)
 
-FR_FEDORA_API_URL = 'https://src.fedoraproject.org/api/0'
-FR_RSE_REPO_PATH = os.environ.get('FR_RSE_REPO_PATH')
+  def run_fedorip(self, package):
+    process = subprocess.Popen(
+      ['/usr/sgug/bin/python', './fedorip.py', package['name']],
+      stdout=subprocess.PIPE,
+      stderr=subprocess.PIPE,
+      env=os.environ.copy(),
+      cwd=os.getcwd()
+    )
+    worker = Fedorip()
 
-pkg_queue = []
+    while process.poll() is None:
+      print(process.stderr.readline().decode(), end='')
+    return json.loads(process.stdout.read())
 
-###############################################################################
-# fedora API REST bindings
+  def filter_and_save(self, success_rpms, pkg_list_path):
+    success_names = map(lambda srpm: srpm['name'], success_rpms)
+    newqueue = list(filter(lambda p: p['name'] not in success_names, pkg_queue))
+    pkg_queue.clear()
+    pkg_queue.extend(newqueue)
+    f = open(pkg_list_path, 'w')
+    f.write(json.dumps(pkg_queue))
+    f.close()
+    log.info('Saved queue progress, only %d left!' % len(pkg_queue))
 
-def fedora_search_pkgs(pattern, page=1, short=1):
-  query = {
-    'pattern': pattern,
-    'short': short,
-    'page': page,
-  }
-  url = '%s/projects?%s' % (FR_FEDORA_API_URL, urlencode(query))
+  def install_rpms(self, fedorip_out):
+    success_rpms = []
 
-  try:
-    return json.loads(urlopen(url).read())
-  except HTTPError as e:
-    log.error('HTTP request to %s failed' % url)
+    for rpm in fedorip_out['rpms']:
+      status, output = subprocess.getstatusoutput(' '.join([
+        '/usr/sgug/bin/sudo',
+        '/usr/sgug/bin/rpm',
+        '-ivh',
+        '--nodeps',
+        rpm['path']
+      ]));
 
-def all_fedora_pkgs(pattern):
-  response = fedora_search_pkgs(pattern)
-  page = 1
-  max_page = response['pagination']['pages']
+      log.info(output)
 
-  yield response
+      if status == 0:
+        success_rpms.append(rpm)
 
-  while page < max_page:
-    log.info('Fetching page %d of %d' % (page, max_page))
-    response = fedora_search_pkgs('*perl-*', page)
-    yield response
-    page += 1
+    log.info('Installed %d' % len(success_rpms))
+    return success_rpms
 
-def dump_pkg_list(pattern):
-  packages = []
-  for frame in all_fedora_pkgs(pattern):
-    packages.extend(frame['projects'])
-  
-  log.info('Got %d packages' % len(packages))
-  f = open('rippums.json', 'w')
-  f.write(json.dumps(packages))
-  exit(0)
+  def commit_and_push(self, rip_results):
+    for installed in rip_results['installed']:
+      status, output = subprocess.getstatusoutput(' '.join([
+        '/usr/sgug/bin/git',
+        '--git-dir',
+        '%s/.git' % (FR_RSE_REPO_PATH),
+        '--work-tree',
+        FR_RSE_REPO_PATH,
+        'add',
+        installed['spec']
+      ]))
 
-###############################################################################
-# RPMs
-
-def run_fedorip(package):
-  process = subprocess.Popen(
-    ['/usr/sgug/bin/python', './fedorip.py', package['name']],
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
-    env=os.environ.copy(),
-    cwd=os.getcwd()
-  )
-  while process.poll() is None:
-    print(process.stderr.readline().decode(), end='')
-  return json.loads(process.stdout.read())
-
-def filter_and_save(success_rpms, pkg_list_path):
-  success_names = map(lambda srpm: srpm['name'], success_rpms)
-  newqueue = list(filter(lambda p: p['name'] not in success_names, pkg_queue))
-  pkg_queue.clear()
-  pkg_queue.extend(newqueue)
-  f = open(pkg_list_path, 'w')
-  f.write(json.dumps(pkg_queue))
-  f.close()
-  log.info('Saved queue progress, only %d left!' % len(pkg_queue))
-
-def install_rpms(fedorip_out):
-  success_rpms = []
-
-  for rpm in fedorip_out['rpms']:
-    status, output = subprocess.getstatusoutput(' '.join([
-      '/usr/sgug/bin/sudo',
-      '/usr/sgug/bin/rpm',
-      '-ivh',
-      '--nodeps',
-      rpm['path']
-    ]));
-
-    log.info(output)
-
-    if status == 0:
-      success_rpms.append(rpm)
-
-  log.info('Installed %d' % len(success_rpms))
-  return success_rpms
-
-###############################################################################
-# VCS
-
-def commit_and_push(rip_results):
-  for installed in rip_results['installed']:
+      log.info(output)
+    
     status, output = subprocess.getstatusoutput(' '.join([
       '/usr/sgug/bin/git',
       '--git-dir',
       '%s/.git' % (FR_RSE_REPO_PATH),
       '--work-tree',
       FR_RSE_REPO_PATH,
-      'add',
-      installed['spec']
+      'commit',
+      "-vm'%s'" % json.dumps(rip_results)
     ]))
 
     log.info(output)
-  
-  status, output = subprocess.getstatusoutput(' '.join([
-    '/usr/sgug/bin/git',
-    '--git-dir',
-    '%s/.git' % (FR_RSE_REPO_PATH),
-    '--work-tree',
-    FR_RSE_REPO_PATH,
-    'commit',
-    "-vm'%s'" % json.dumps(rip_results)
-  ]))
 
-  log.info(output)
+    status, output = subprocess.getstatusoutput(' '.join([
+      '/usr/sgug/bin/git',
+      '--git-dir',
+      '%s/.git' % (FR_RSE_REPO_PATH),
+      '--work-tree',
+      FR_RSE_REPO_PATH,
+      'push',
+      '-u',
+      'origin',
+      'HEAD'
+    ]))
 
-  status, output = subprocess.getstatusoutput(' '.join([
-    '/usr/sgug/bin/git',
-    '--git-dir',
-    '%s/.git' % (FR_RSE_REPO_PATH),
-    '--work-tree',
-    FR_RSE_REPO_PATH,
-    'push',
-    '-u',
-    'origin',
-    'HEAD'
-  ]))
+    log.info(output)
 
-  log.info(output)
+  def rip_event_loop(self, pkg_list_path):
+    while len(pkg_queue):
+      select = random.randrange(0, len(pkg_queue))
+      package = pkg_queue[select]
+      rip_results = run_fedorip(package)
+      rip_results['installed'] = install_rpms(rip_results)
+      filter_and_save(rip_results['installed'], pkg_list_path)
+      commit_and_push(rip_results)
+    
+  def start(self, path):
+    f = open(path, 'r')
+    pkg_queue.extend(json.loads(f.read()))
+    f.close()
+    rip_event_loop(path)
 
-
-def rip_event_loop(pkg_list_path):
-  while len(pkg_queue):
-    select = random.randrange(0, len(pkg_queue))
-    package = pkg_queue[select]
-    rip_results = run_fedorip(package)
-    rip_results['installed'] = install_rpms(rip_results)
-    filter_and_save(rip_results['installed'], pkg_list_path)
-    commit_and_push(rip_results)
-  
-def start(path):
-   f = open(path, 'r')
-   pkg_queue.extend(json.loads(f.read()))
-   f.close()
-   rip_event_loop(path)
 
 def parse_args():
   parser = argparse.ArgumentParser(description='rippums!!!!')
@@ -195,6 +159,6 @@ def parse_args():
 if __name__ == '__main__':
   args = parse_args()
   if args.fetch_pattern:
-    dump_pkg_list(args.fetch_pattern)
+    Rippums().dump_pkg_list(args.fetch_pattern)
   elif args.pkg_list_path:
-    start(args.pkg_list_path)
+    Rippums().start(args.pkg_list_path)

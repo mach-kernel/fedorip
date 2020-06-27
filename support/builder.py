@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-
-# fedorip.py (now with 150% more abuses)
-# github.com/mach-kernel
-
 import os
 import re
 import subprocess
@@ -14,21 +9,19 @@ import sys
 import logging
 import json
 
-from handlers.spec_success import handle_get_outrpms
-from handlers.spec_failed import handle_perl_missing_dep
-
-from fedorip_env import *
-from vcs import rip_from_fedora_vcs
+from support.env import *
+from support.vcs import vcs_clone_and_stage
 
 EMPTY_STATE = {
   'rpms_out': [],
   'srpms_out': []
 }
 
-class Worker:
+class Builder:
   state = EMPTY_STATE.copy()
   log = logging.getLogger('fedorip')
 
+  # TODO: How do we handle this, except not like this
   spec_fixes = [
     "s/perl(:MODULE_COMPAT.*$/perl(:MODULE_COMPAT_%(perl -V:version | sed 's,[^0-9^\.]*,,g'))/"
   ]
@@ -40,6 +33,10 @@ class Worker:
     sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     self.log.addHandler(sh)
 
+  # TODO: Should look into trying:
+  # rpmbuild --define "_topdir rpmbuild_but_just_for_pkg_x"
+  # Would be preferable since it would allow you to run multiple workers
+  # (don't worry about trampling dirs)
   def clean_rpmhome(self):
     dirs = list(map(lambda d: '%s/%s' % (FR_RPMHOME_PATH, d)), [
       'SOURCES',
@@ -52,8 +49,8 @@ class Worker:
     for dir in dirs:
       dir_util.remove_tree(dir)    
 
-  def handle_build(self, pkg_name):
-    try_build = rip_from_fedora_vcs(pkg_name)
+  def build(self, pkg_name):
+    try_build = vcs_clone_and_stage(pkg_name)
 
     if not try_build:
       return EMPTY_STATE

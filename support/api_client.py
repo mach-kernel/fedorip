@@ -15,7 +15,7 @@ sh.setLevel(logging.INFO)
 sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 log.addHandler(sh)
 
-def fedora_search_pkgs(pattern, page=1, short=1):
+def fclient_search_pkgs(pattern, page=1, short=1):
   query = {
     'pattern': pattern,
     'short': short,
@@ -29,8 +29,8 @@ def fedora_search_pkgs(pattern, page=1, short=1):
     log.error('HTTP request to %s failed' % url)
     log.error(e.read())
 
-def all_fedora_pkgs(pattern):
-  response = fedora_search_pkgs(pattern)
+def fclient_all_pkgs(pattern):
+  response = fclient_search_pkgs(pattern)
   page = 1
   max_page = response['pagination']['pages']
 
@@ -38,11 +38,11 @@ def all_fedora_pkgs(pattern):
 
   while page < max_page:
     log.info('Fetching page %d of %d' % (page, max_page))
-    response = fedora_search_pkgs('*perl-*', page)
+    response = fclient_search_pkgs('*perl-*', page)
     yield response
     page += 1
 
-def get_raw_spec_for_pkg(pkgname):
+def fclient_raw_spec_for_pkg(pkgname):
   url = 'https://src.fedoraproject.org/rpms/%s/raw/master/f/%s.spec' % (
     pkgname,
     pkgname

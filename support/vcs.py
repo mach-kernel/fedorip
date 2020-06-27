@@ -4,7 +4,8 @@ from distutils import file_util
 from glob import glob
 import logging
 import json
-from fedorip_env import *
+
+from support.env import *
 
 log = logging.getLogger('fedorip/vcs')
 log.setLevel(logging.DEBUG)
@@ -15,7 +16,7 @@ sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(me
 
 log.addHandler(sh)
 
-def rip_from_fedora_vcs(pkg_name):
+def vcs_clone_and_stage(pkg_name):
   url = '%s/%s.git' % (FR_FEDORA_CLONE_URI, pkg_name)
   target_path = '%s/%s' % (FR_TMP_PATH, pkg_name)
   spec_path = '%s/packages/%s/SPECS/' % (FR_RSE_REPO_PATH, pkg_name)
@@ -52,7 +53,7 @@ def rip_from_fedora_vcs(pkg_name):
 
   return True
 
-def commit_and_push(rip_results):
+def vcs_commit_and_push(rip_results):
   for installed in rip_results['installed']:
     status, output = subprocess.getstatusoutput(' '.join([
       '/usr/sgug/bin/git',

@@ -17,96 +17,54 @@ import json
 from handlers.spec_success import handle_get_outrpms
 from handlers.spec_failed import handle_perl_missing_dep
 
-class Fedorip:
-  state = {}
+from fedorip_env import *
+from vcs import rip_from_fedora_vcs
+
+EMPTY_STATE = {
+  'rpms_out': [],
+  'srpms_out': []
+}
+
+class Worker:
+  state = EMPTY_STATE.copy()
   log = logging.getLogger('fedorip')
-  FR_RSE_REPO_PATH = os.environ.get('FR_RSE_REPO_PATH')
-  FR_RPMHOME_PATH = os.environ.get('FR_RPMHOME_PATH')
-  FR_FEDORA_CLONE_URI = 'https://src.fedoraproject.org/rpms'
-  FR_TMP_PATH = '/var/tmp/fedorip'
-
-  spec_fail_handlers = [
-    handle_perl_missing_dep,
-  ]
-
-  spec_success_handlers = [
-    handle_get_outrpms
-  ]
 
   spec_fixes = [
     "s/perl(:MODULE_COMPAT.*$/perl(:MODULE_COMPAT_%(perl -V:version | sed 's,[^0-9^\.]*,,g'))/"
   ]
 
   def __init__(self):
-    self.state = {
-      'pkg_queue': [],
-      'pkg_success': [],
-      'pkg_fail': [],
-      'rpms_out': [],
-      'srpms_out': []
-    }
-
     self.log.setLevel(logging.DEBUG)
     sh = logging.StreamHandler()
     sh.setLevel(logging.INFO)
     sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     self.log.addHandler(sh)
 
-  def from_args(self):
-    shutil.rmtree(self.FR_TMP_PATH)
-    os.mkdir(self.FR_TMP_PATH)
+  def clean_rpmhome(self):
+    dirs = list(map(lambda d: '%s/%s' % (FR_RPMHOME_PATH, d)), [
+      'SOURCES',
+      'SPRMS',
+      'RPMS',
+      'BUILD',
+      'BUILDROOT',
+    ])
 
-    self.state['pkg_queue'].append(sys.argv[1])
-    self.rip_event_loop()
-
-    print(json.dumps(self.state))
-    exit(0)
-
-  def rip_from_fedora_vcs(self, pkg_name):
-    url = '%s/%s.git' % (self.FR_FEDORA_CLONE_URI, pkg_name)
-    target_path = '%s/%s' % (self.FR_TMP_PATH, pkg_name)
-    spec_path = '%s/packages/%s/SPECS/' % (self.FR_RSE_REPO_PATH, pkg_name)
-    source_path = '%s/packages/%s/SOURCES/' % (self.FR_RSE_REPO_PATH, pkg_name)
-
-    if not (os.path.exists(target_path)):
-      clcmd = '/usr/sgug/bin/git clone %s %s' % (url, target_path)
-      clstatus, clout = subprocess.getstatusoutput(clcmd)
-
-      if clstatus:
-        return False
-
-    if not (os.path.exists(spec_path)):
-      os.makedirs(spec_path)
-    
-    if not (os.path.exists(source_path)):
-      os.makedirs(source_path)
-
-    for spec_file in glob.glob('%s/%s/**/*.spec' % (self.FR_TMP_PATH, pkg_name), recursive=True):
-      file_util.copy_file(
-        spec_file,
-        spec_path,
-        update=True
-      )
-
-    for source_file in glob.glob('%s/%s/**/*' % (self.FR_TMP_PATH, pkg_name), recursive=True):
-      if '.spec' in source_file:
-        continue
-      file_util.copy_file(
-        source_file,
-        source_path,
-        update=True
-      )
-
-    return True
+    for dir in dirs:
+      dir_util.remove_tree(dir)    
 
   def handle_build(self, pkg_name):
+    try_build = rip_from_fedora_vcs(pkg_name)
+
+    if not try_build:
+      return EMPTY_STATE
+
     spec_paths = glob.glob(
-      '%s/packages/%s/SPECS/*.spec' % (self.FR_RSE_REPO_PATH, pkg_name)
+      '%s/packages/%s/SPECS/*.spec' % (FR_RSE_REPO_PATH, pkg_name)
     )
 
     dir_util.copy_tree(
-      '%s/packages/%s/SOURCES' % (self.FR_RSE_REPO_PATH, pkg_name),
-      '%s/SOURCES/' % self.FR_RPMHOME_PATH,
+      '%s/packages/%s/SOURCES' % (FR_RSE_REPO_PATH, pkg_name),
+      '%s/SOURCES/' % FR_RPMHOME_PATH,
       update=True
     )
 
@@ -117,32 +75,59 @@ class Fedorip:
       sed_cmd = '/usr/sgug/bin/sed -ie "%s" %s' % (sed_expr, spec_paths[0])
       self.log.info(subprocess.getoutput(sed_cmd))
 
-    build_command = '/usr/sgug/bin/rpmbuild --undefine=_disable_source_fetch --nocheck -ba %s' % spec_paths[0]
-    rpmstatus, rpmoutput = subprocess.getstatusoutput(build_command)
-    self.log.info(rpmoutput)
+    rpmbuild_process = subprocess.Popen(
+      [
+        '/usr/sgug/bin/rpmbuild',
+        '--undefine=_disable_source_fetch',
+        '--nocheck',
+        '-ba',
+        spec_paths[0]
+      ],
+      env=os.environ.copy(),
+      stderr=subprocess.PIPE,
+      stdout=subprocess.PIPE
+    )
 
-    if (rpmstatus == 0):
-      self.state['pkg_success'].append(pkg_name)
-      for handler in self.spec_success_handlers:
-        handler(fedorip, spec_paths[0], pkg_name, rpmoutput)
+    while rpmbuild_process.poll() is None:
+      print(rpmbuild_process.stdout.readline().decode(), end='')
+      print(rpmbuild_process.stderr.readline().decode(), end='')
+
+    if (rpmbuild_process.returncode == 0):
+      self.handle_get_outrpms(spec_paths[0], pkg_name)
     else:
-      self.state['pkg_fail'].append(pkg_name)
-      self.log.warning('%s build failed -- missing dependencies?' % pkg_name)
-      for handler in self.spec_fail_handlers:
-        handler(self, pkg_name, rpmoutput)
+      self.log.error('Build failed, skipping %s', pkg_name)
+    
+    return self.state
 
-  def rip_event_loop(self):
-    while len(self.state['pkg_queue']) > 0:
-      remain = len(self.state['pkg_queue'])
-      current_pkg = self.state['pkg_queue'].pop()
-      self.log.info('Working on %s, %d left' % (current_pkg, remain))
-      try_build = self.rip_from_fedora_vcs(current_pkg)
-      if try_build:
-        self.handle_build(current_pkg)
+  def handle_get_outrpms(self, spec_path, pkg_name):
+    outfiles = glob('%s/RPMS/**/*.rpm', recursive=True).extend(glob('%s/SRPMS/**/*.rpm', recursive=True))
 
+    if not len(outfiles):
+      return
 
-if __name__ == '__main__':
-  if len(sys.argv) <= 1:
-    print('ERROR: Provide src.fedoraproject.org repo pkg-name')
-    exit(1)
-  Fedorip().from_args()
+    self.log.info('Found %d output RPMs' % len(outfiles))
+    move_rpms(outfiles)
+    for outrpm in outfiles:
+      meta = {
+        'name': pkg_name,
+        'rpm': os.path.basename(outrpm),
+        'spec': spec_path
+      }
+
+      if '.src.rpm' in outrpm:
+        self.state['srpms_out'].append(meta)
+      else:
+        self.state['rpms_out'].append(meta)
+
+  def move_rpms(self, paths):
+    if not os.path.exists(FR_OUTRPM_PATH):
+      os.mkdir(FR_OUTRPM_PATH)
+
+    if not os.path.exists(FR_OUTSRPM_PATH):
+      os.mkdir(FR_OUTSRPM_PATH)
+
+    for rpm_path in paths:
+      if '.src.rpm' in rpm_path:
+        shutil.move(rpm_path, FR_OUTSRPM_PATH)
+      else:
+        shutil.move(rpm_path, FR_OUTRPM_PATH)

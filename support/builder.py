@@ -48,7 +48,8 @@ class Builder:
 
     for dir in dirs:
       self.log.info('Cleaning %s' % dir)
-      dir_util.remove_tree(dir)    
+      dir_util.remove_tree(dir)
+      os.mkdir(dir)
 
   def build(self, pkg_name):
     try_build = vcs_clone_and_stage(pkg_name)

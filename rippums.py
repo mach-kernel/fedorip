@@ -35,7 +35,7 @@ class Rippums:
 
     signal.signal(signal.SIGINT, self.handle_sigint)
     
-  def handle_sigint(self, frame):
+  def handle_sigint(self, signum, frame):
     self.log.error('OK! Stopping + dumping skiplist')
     f = open('skiplist.json', 'w')
     f.write(json.dumps(self.skiplist))

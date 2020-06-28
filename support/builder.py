@@ -40,7 +40,7 @@ class Builder:
   def clean_rpmhome(self):
     dirs = list(map(lambda d: '%s/%s' % (FR_RPMHOME_PATH, d), [
       'SOURCES',
-      'SPRMS',
+      'SRPMS',
       'RPMS',
       'BUILD',
       'BUILDROOT',

@@ -35,7 +35,7 @@ class Rippums:
         )
       )
 
-      for pkg in frame['packages']:
+      for pkg in frame['projects']:
         self.log.info('Attempting %s' % pkg['name'])
         can_build = rpm_can_build(pkg['name'])
 

@@ -38,13 +38,13 @@ class Builder:
   # Would be preferable since it would allow you to run multiple workers
   # (don't worry about trampling dirs)
   def clean_rpmhome(self):
-    dirs = list(map(lambda d: '%s/%s' % (FR_RPMHOME_PATH, d)), [
+    dirs = list(map(lambda d: '%s/%s' % (FR_RPMHOME_PATH, d), [
       'SOURCES',
       'SPRMS',
       'RPMS',
       'BUILD',
       'BUILDROOT',
-    ])
+    ]))
 
     for dir in dirs:
       self.log.info('Cleaning %s' % dir)

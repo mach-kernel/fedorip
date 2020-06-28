@@ -1,86 +1,94 @@
 #!/usr/bin/env python
 
-# rippums.py (where delusions become reality)
-
-# uses src.fedoraproject.org api to grab packages matching a pattern
-# uses fedorip to spawn jobs to walk a chain of packages
-# installs then commits successfully built pkgs
-
 import argparse
 import json
 import logging
+import random
+import subprocess
+import os
+import functools
+import signal
+import json
 
-from urllib.parse import urlencode
-from urllib.request import urlopen
-from urllib.error import HTTPError
+from support.builder import Builder
+from support.env import *
+from support.api_client import fclient_all_pkgs
+from support.vcs import vcs_commit_and_push
+from support.rpm import rpm_install_rpms, rpm_can_build
 
-log = logging.getLogger('rippums')
-log.setLevel(logging.DEBUG)
+class Rippums:
+  log = logging.getLogger('fedorip')
+  builder = Builder()
+  skiplist = []
 
-sh = logging.StreamHandler()
-sh.setLevel(logging.INFO)
-sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+  def __init__(self):
+    self.log.setLevel(logging.DEBUG)
+    sh = logging.StreamHandler()
+    sh.setLevel(logging.INFO)
+    sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    self.log.addHandler(sh)
 
-log.addHandler(sh)
+    if os.path.exists('skiplist.json'):
+      skl = open('skiplist.json', 'r')
+      self.skiplist = json.loads(skl.read())
+      skl.close()
 
-FR_FEDORA_API_URL = 'https://src.fedoraproject.org/api/0'
-
-def fedora_search_pkgs(pattern, page=1, short=1):
-  query = {
-    'pattern': pattern,
-    'short': short,
-    'page': page,
-  }
-  url = '%s/projects?%s' % (FR_FEDORA_API_URL, urlencode(query))
-
-  try:
-    return json.loads(urlopen(url).read())
-  except HTTPError as e:
-    log.error('HTTP request to %s failed' % url)
-
-def all_fedora_pkgs(pattern):
-  response = fedora_search_pkgs(pattern)
-  page = 1
-  max_page = response['pagination']['pages']
-
-  yield response
-
-  while page < max_page:
-    log.info('Fetching page %d of %d' % (page, max_page))
-    response = fedora_search_pkgs('*perl-*', page)
-    yield response
-    page += 1
-
-def dump_pkg_list(pattern):
-  packages = []
-  for frame in all_fedora_pkgs(pattern):
-    packages.extend(frame['projects'])
-  
-  log.info('Got %d packages' % len(packages))
-  f = open('rippums.json', 'w')
-  f.write(json.dumps(packages))
-  exit(0)
+    signal.signal(signal.SIGINT, self.handle_sigint)
     
+  def handle_sigint(self, signum, frame):
+    self.log.error('OK! Stopping + dumping skiplist')
+    f = open('skiplist.json', 'w')
+    f.write(json.dumps(self.skiplist))
+    f.close()
+    exit(0)
+
+  def start(self, pattern):
+    for frame in fclient_all_pkgs(pattern):      
+      self.log.info(
+        'QUERY: %s, PAGE: %d/%d' % (
+          pattern,
+          frame['pagination']['page'],
+          frame['pagination']['pages']
+        )
+      )
+
+      for pkg in frame['projects']:
+        self.log.info('Attempting %s' % pkg['name'])
+
+        if pkg['name'] in self.skiplist:
+          self.log.info('Package %s in skiplist', pkg['name'])
+          continue
+
+        self.skiplist.append(pkg['name'])
+        can_build = rpm_can_build(pkg['name'])
+
+        if not can_build:
+          self.log.info('Skipping %s', pkg['name'])
+          continue
+
+        rip_results = self.builder.build(pkg['name'])
+        rip_results['installed'] = rpm_install_rpms(rip_results['rpms_out'])
+        if not len(rip_results['installed']):
+          continue
+
+        vcs_commit_and_push(rip_results)
+    f = open('skiplist.json', 'w')
+    f.write(json.dumps(self.skiplist))
+    f.close()
+    exit(0)
 
 def parse_args():
   parser = argparse.ArgumentParser(description='rippums!!!!')
-
-  group = parser.add_mutually_exclusive_group()
-  group.add_argument(
+  parser.add_argument(
     '--fetch-pattern',
     help='Get all packages matching pattern, save to rippums.json',
     default=False,
     type=str,
-  )
-  group.add_argument(
-    '--pkg-list-path',
-    help='Path to list of packages to target',
-    default='rippums.json'
+    required=True
   )
 
   return parser.parse_args()
 
 if __name__ == '__main__':
   args = parse_args()
-  if args.fetch_pattern:
-    dump_pkg_list(args.fetch_pattern)
+  Rippums().start(args.fetch_pattern)

@@ -37,7 +37,7 @@ def rpm_can_build(pkgname):
   deps = functools.reduce(lambda a,b: a+b, dep_lists)
 
   for dep in deps:
-    dep_name = dep.split(' ')[0]
+    dep_name = str(dep).split(' ')[0]
     if dep_name in exclude:
       continue
     if not rpm_can_satisfy(dep_name):

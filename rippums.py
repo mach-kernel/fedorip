@@ -27,7 +27,7 @@ class Rippums:
 
   def start(self, pattern):
     for frame in fclient_all_pkgs(pattern):      
-      log.info(
+      self.log.info(
         'QUERY: %s, PAGE: %d/%d' % (
           pattern,
           frame['pagination']['page'],
@@ -36,11 +36,11 @@ class Rippums:
       )
 
       for pkg in frame['packages']:
-        log.info('Attempting %s' % pkg['name'])
+        self.log.info('Attempting %s' % pkg['name'])
         can_build = rpm_can_build(pkg['name'])
 
         if not can_build:
-          log.info('Skipping %s', pkg['name'])
+          self.log.info('Skipping %s', pkg['name'])
           continue
 
         rip_results = self.builder.build(pkg['name'])

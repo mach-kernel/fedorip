@@ -40,6 +40,7 @@ class Rippums:
     f = open('skiplist.json', 'w')
     f.write(json.dumps(self.skiplist))
     f.close()
+    exit(0)
 
   def start(self, pattern):
     for frame in fclient_all_pkgs(pattern):      
@@ -72,6 +73,10 @@ class Rippums:
           continue
 
         vcs_commit_and_push(rip_results)
+    f = open('skiplist.json', 'w')
+    f.write(json.dumps(self.skiplist))
+    f.close()
+    exit(0)
 
 def parse_args():
   parser = argparse.ArgumentParser(description='rippums!!!!')

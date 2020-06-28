@@ -59,17 +59,16 @@ class Rippums:
           self.log.info('Package %s in skiplist', pkg['name'])
           continue
 
+        self.skiplist.append(pkg['name'])
         can_build = rpm_can_build(pkg['name'])
 
         if not can_build:
           self.log.info('Skipping %s', pkg['name'])
-          self.skiplist.append(pkg['name'])
           continue
 
         rip_results = self.builder.build(pkg['name'])
         rip_results['installed'] = rpm_install_rpms(rip_results['rpms_out'])
         if not len(rip_results['installed']):
-          self.skiplist.append(pkg['name'])
           continue
 
         vcs_commit_and_push(rip_results)

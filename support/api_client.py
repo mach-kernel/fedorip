@@ -6,7 +6,6 @@ from urllib.request import urlopen
 from urllib.error import HTTPError
 
 FR_FEDORA_API_URL = 'https://src.fedoraproject.org/api/0'
-FR_FEDORA_VCS_FILE_URL = 'https://src.fedoraproject.org/rpms/perl-HTTP-Date/raw/master/f/perl-HTTP-Date.spec'
 
 log = logging.getLogger('fedorip/client')
 log.setLevel(logging.DEBUG)
@@ -38,7 +37,7 @@ def fclient_all_pkgs(pattern):
 
   while page < max_page:
     log.info('Fetching page %d of %d' % (page, max_page))
-    response = fclient_search_pkgs('*perl-*', pattern)
+    response = fclient_search_pkgs(pattern)
     yield response
     page += 1
 

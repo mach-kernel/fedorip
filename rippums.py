@@ -15,7 +15,7 @@ from support.vcs import vcs_commit_and_push
 from support.rpm import rpm_install_rpms, rpm_can_build
 
 class Rippums:
-  log = logging.getLogger('rippums')
+  log = logging.getLogger('fedorip')
   builder = Builder()
 
   def __init__(self):

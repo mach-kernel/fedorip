@@ -8,7 +8,7 @@ from urllib.error import HTTPError
 FR_FEDORA_API_URL = 'https://src.fedoraproject.org/api/0'
 FR_FEDORA_VCS_FILE_URL = 'https://src.fedoraproject.org/rpms/perl-HTTP-Date/raw/master/f/perl-HTTP-Date.spec'
 
-log = logging.getLogger('client')
+log = logging.getLogger('fedorip/client')
 log.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
 sh.setLevel(logging.INFO)

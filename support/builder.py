@@ -19,7 +19,7 @@ EMPTY_STATE = {
 
 class Builder:
   state = EMPTY_STATE.copy()
-  log = logging.getLogger('fedorip')
+  log = logging.getLogger('fedorip/builder')
 
   # TODO: How do we handle this, except not like this
   spec_fixes = [
@@ -43,7 +43,7 @@ class Builder:
       'SRPMS',
       'RPMS',
       'BUILD',
-      'BUILDROOT',
+      'BUILDROOT'
     ]))
 
     for dir in dirs:

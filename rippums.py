@@ -45,7 +45,7 @@ class Rippums:
 
         rip_results = self.builder.build(pkg['name'])
         rip_results['installed'] = rpm_install_rpms(rip_results['rpms_out'])
-        vcs_commit_and_push(rip_results['installed'])
+        vcs_commit_and_push(rip_results)
 
 def parse_args():
   parser = argparse.ArgumentParser(description='rippums!!!!')

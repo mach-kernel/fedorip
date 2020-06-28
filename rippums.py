@@ -61,4 +61,4 @@ def parse_args():
 
 if __name__ == '__main__':
   args = parse_args()
-  Rippums().rip_event_loop(args.fetch_pattern)
+  Rippums().start(args.fetch_pattern)

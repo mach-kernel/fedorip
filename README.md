@@ -18,5 +18,7 @@ FR_TMP_PATH = '/var/tmp/fedorip'
 Send it:
 
 ```bash
+# TODO hammy spec
+python -m pip install --user -r requirements.txt
 python rippums.py --fetch-pattern 'perl-*'
 ```

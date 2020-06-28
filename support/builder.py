@@ -47,6 +47,7 @@ class Builder:
     ])
 
     for dir in dirs:
+      self.log.info('Cleaning %s' % dir)
       dir_util.remove_tree(dir)    
 
   def build(self, pkg_name):
@@ -54,6 +55,8 @@ class Builder:
 
     if not try_build:
       return EMPTY_STATE
+
+    self.clean_rpmhome()
 
     spec_paths = glob(
       '%s/packages/%s/SPECS/*.spec' % (FR_RSE_REPO_PATH, pkg_name)

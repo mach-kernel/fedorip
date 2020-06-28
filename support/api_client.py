@@ -38,7 +38,7 @@ def fclient_all_pkgs(pattern):
 
   while page < max_page:
     log.info('Fetching page %d of %d' % (page, max_page))
-    response = fclient_search_pkgs('*perl-*', page)
+    response = fclient_search_pkgs('*perl-*', pattern)
     yield response
     page += 1
 

@@ -125,11 +125,5 @@ class Builder:
     if not os.path.exists(FR_OUTRPM_PATH):
       os.mkdir(FR_OUTRPM_PATH)
 
-    if not os.path.exists(FR_OUTSRPM_PATH):
-      os.mkdir(FR_OUTSRPM_PATH)
-
     for rpm_path in paths:
-      if '.src.rpm' in rpm_path:
-        shutil.move(rpm_path, FR_OUTSRPM_PATH)
-      else:
-        shutil.move(rpm_path, FR_OUTRPM_PATH)
+      shutil.move(rpm_path, FR_OUTRPM_PATH)

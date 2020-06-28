@@ -3,6 +3,7 @@ import logging
 import functools
 
 from support.api_client import fclient_raw_spec_for_pkg
+from support.env import *
 from pyrpm.spec import Spec, replace_macros
 
 log = logging.getLogger('fedorip/rpm')
@@ -53,7 +54,7 @@ def rpm_install_rpms(rpms):
       '/usr/sgug/bin/rpm',
       '-ivh',
       '--nodeps',
-      rpm['path']
+      '%s/%s' % (FR_OUTRPM_PATH, rpm['rpm'])
     ]))
 
     log.info(output)

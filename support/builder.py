@@ -1,7 +1,7 @@
 import os
 import re
 import subprocess
-import glob
+from glob import glob
 import shutil
 from distutils import dir_util
 from distutils import file_util
@@ -55,7 +55,7 @@ class Builder:
     if not try_build:
       return EMPTY_STATE
 
-    spec_paths = glob.glob(
+    spec_paths = glob(
       '%s/packages/%s/SPECS/*.spec' % (FR_RSE_REPO_PATH, pkg_name)
     )
 

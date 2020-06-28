@@ -101,7 +101,11 @@ class Builder:
     return self.state
 
   def handle_get_outrpms(self, spec_path, pkg_name):
-    outfiles = glob('%s/RPMS/**/*.rpm', recursive=True).extend(glob('%s/SRPMS/**/*.rpm', recursive=True))
+    outfiles = glob(
+      '%s/RPMS/**/*.rpm' % FR_RPMHOME_PATH, 
+    recursive=True).extend(glob(
+      '%s/SRPMS/**/*.rpm' % FR_RPMHOME_PATH, 
+    recursive=True))
 
     if not len(outfiles):
       return

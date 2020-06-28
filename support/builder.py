@@ -90,8 +90,9 @@ class Builder:
     )
 
     while rpmbuild_process.poll() is None:
-      print(rpmbuild_process.stdout.readline().decode(), end='')
-      print(rpmbuild_process.stderr.readline().decode(), end='')
+      out, err = rpmbuild_process.communicate()
+      print(out.decode(), end='')
+      print(err.decode(), end='')
 
     if (rpmbuild_process.returncode == 0):
       self.handle_get_outrpms(spec_paths[0], pkg_name)

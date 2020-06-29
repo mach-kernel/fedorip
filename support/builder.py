@@ -13,15 +13,13 @@ from support.env import *
 from support.vcs import vcs_clone_and_stage
 
 class Builder:
-  state = {}
-  log = logging.getLogger('fedorip/builder')
-
   # TODO: How do we handle this, except not like this
   spec_fixes = [
     "s/perl(:MODULE_COMPAT.*$/perl(:MODULE_COMPAT_%(perl -V:version | sed 's,[^0-9^\.]*,,g'))/"
   ]
 
   def __init__(self):
+    self.log = logging.getLogger('fedorip/builder')
     self.log.setLevel(logging.DEBUG)
     sh = logging.StreamHandler()
     sh.setLevel(logging.INFO)

@@ -69,7 +69,7 @@ class Builder:
     )
 
     if not len(spec_paths):
-      raise FileNotFoundError(('Cannot find spec in %s', spec_paths))
+      return self.state
 
     for sed_expr in self.spec_fixes:
       sed_cmd = '/usr/sgug/bin/sed -ie "%s" %s' % (sed_expr, spec_paths[0])

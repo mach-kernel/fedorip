@@ -13,10 +13,7 @@ from support.env import *
 from support.vcs import vcs_clone_and_stage
 
 class Builder:
-  state = {
-    'rpms_out': [],
-    'srpms_out': []
-  }
+  state = {}
   log = logging.getLogger('fedorip/builder')
 
   # TODO: How do we handle this, except not like this
@@ -30,6 +27,10 @@ class Builder:
     sh.setLevel(logging.INFO)
     sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     self.log.addHandler(sh)
+    self.state = {
+      'rpms_out': [],
+      'srpms_out': []
+    }
 
   # TODO: Should look into trying:
   # rpmbuild --define "_topdir rpmbuild_but_just_for_pkg_x"

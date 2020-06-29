@@ -52,6 +52,7 @@ class Builder:
       os.mkdir(dir)
 
   def build(self, pkg_name):
+    self.state = EMPTY_STATE.copy()
     try_build = vcs_clone_and_stage(pkg_name)
 
     if not try_build:

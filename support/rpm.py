@@ -59,7 +59,7 @@ def rpm_install_rpms(rpms):
 
     log.info(output)
 
-    if status == 0:
+    if status == 0 or 'is already installed' in output:
       success_rpms.append(rpm)
 
   log.info('Installed %d' % len(success_rpms))

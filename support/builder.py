@@ -56,7 +56,7 @@ class Builder:
     try_build = vcs_clone_and_stage(pkg_name)
 
     if not try_build:
-      return EMPTY_STATE
+      return EMPTY_STATE.copy()
 
     self.clean_rpmhome()
 

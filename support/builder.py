@@ -12,6 +12,13 @@ import json
 from support.env import *
 from support.vcs import vcs_clone_and_stage
 
+log = logging.getLogger('fedorip/builder')
+log.setLevel(logging.DEBUG)
+sh = logging.StreamHandler()
+sh.setLevel(logging.INFO)
+sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+log.addHandler(sh)
+
 class Builder:
   # TODO: How do we handle this, except not like this
   spec_fixes = [
@@ -19,12 +26,6 @@ class Builder:
   ]
 
   def __init__(self):
-    self.log = logging.getLogger('fedorip/builder')
-    self.log.setLevel(logging.DEBUG)
-    sh = logging.StreamHandler()
-    sh.setLevel(logging.INFO)
-    sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    self.log.addHandler(sh)
     self.state = {
       'rpms_out': [],
       'srpms_out': []
@@ -44,7 +45,7 @@ class Builder:
     ]))
 
     for dir in dirs:
-      self.log.info('Cleaning %s' % dir)
+      log.info('Cleaning %s' % dir)
       dir_util.remove_tree(dir)
       os.mkdir(dir)
 
@@ -71,7 +72,7 @@ class Builder:
 
     for sed_expr in self.spec_fixes:
       sed_cmd = '/usr/sgug/bin/sed -ie "%s" %s' % (sed_expr, spec_paths[0])
-      self.log.info(subprocess.getoutput(sed_cmd))
+      log.info(subprocess.getoutput(sed_cmd))
 
     rpmbuild_process = subprocess.Popen(
       [
@@ -94,7 +95,7 @@ class Builder:
     if (rpmbuild_process.returncode == 0):
       self.handle_get_outrpms(spec_paths[0], pkg_name)
     else:
-      self.log.error('Build failed, skipping %s', pkg_name)
+      log.error('Build failed, skipping %s', pkg_name)
     
     return self.state
 
@@ -105,7 +106,7 @@ class Builder:
     if not len(outfiles):
       return
 
-    self.log.info('Found %d output RPMs' % len(outfiles))
+    log.info('Found %d output RPMs' % len(outfiles))
     self.move_rpms(outfiles)
     for outrpm in outfiles:
       meta = {

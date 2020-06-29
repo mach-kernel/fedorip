@@ -12,13 +12,11 @@ import json
 from support.env import *
 from support.vcs import vcs_clone_and_stage
 
-EMPTY_STATE = {
-  'rpms_out': [],
-  'srpms_out': []
-}
-
 class Builder:
-  state = EMPTY_STATE.copy()
+  state = {
+    'rpms_out': [],
+    'srpms_out': []
+  }
   log = logging.getLogger('fedorip/builder')
 
   # TODO: How do we handle this, except not like this
@@ -52,11 +50,10 @@ class Builder:
       os.mkdir(dir)
 
   def build(self, pkg_name):
-    self.state = EMPTY_STATE.copy()
     try_build = vcs_clone_and_stage(pkg_name)
 
     if not try_build:
-      return EMPTY_STATE.copy()
+      return self.state
 
     self.clean_rpmhome()
 

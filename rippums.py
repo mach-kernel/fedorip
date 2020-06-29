@@ -18,7 +18,6 @@ from support.rpm import rpm_install_rpms, rpm_can_build
 
 class Rippums:
   log = logging.getLogger('fedorip')
-  builder = Builder()
   skiplist = []
 
   def __init__(self):
@@ -66,7 +65,7 @@ class Rippums:
           self.log.info('Skipping %s', pkg['name'])
           continue
 
-        rip_results = self.builder.build(pkg['name'])
+        rip_results = Builder().build(pkg['name'])
         rip_results['installed'] = rpm_install_rpms(rip_results['rpms_out'])
         if not len(rip_results['installed']):
           continue

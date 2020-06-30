@@ -12,26 +12,24 @@ import json
 from support.env import *
 from support.vcs import vcs_clone_and_stage
 
-EMPTY_STATE = {
-  'rpms_out': [],
-  'srpms_out': []
-}
+log = logging.getLogger('fedorip/builder')
+log.setLevel(logging.DEBUG)
+sh = logging.StreamHandler()
+sh.setLevel(logging.INFO)
+sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+log.addHandler(sh)
 
 class Builder:
-  state = EMPTY_STATE.copy()
-  log = logging.getLogger('fedorip/builder')
-
   # TODO: How do we handle this, except not like this
   spec_fixes = [
     "s/perl(:MODULE_COMPAT.*$/perl(:MODULE_COMPAT_%(perl -V:version | sed 's,[^0-9^\.]*,,g'))/"
   ]
 
   def __init__(self):
-    self.log.setLevel(logging.DEBUG)
-    sh = logging.StreamHandler()
-    sh.setLevel(logging.INFO)
-    sh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    self.log.addHandler(sh)
+    self.state = {
+      'rpms_out': [],
+      'srpms_out': []
+    }
 
   # TODO: Should look into trying:
   # rpmbuild --define "_topdir rpmbuild_but_just_for_pkg_x"
@@ -47,7 +45,7 @@ class Builder:
     ]))
 
     for dir in dirs:
-      self.log.info('Cleaning %s' % dir)
+      log.info('Cleaning %s' % dir)
       dir_util.remove_tree(dir)
       os.mkdir(dir)
 
@@ -55,7 +53,7 @@ class Builder:
     try_build = vcs_clone_and_stage(pkg_name)
 
     if not try_build:
-      return EMPTY_STATE
+      return self.state
 
     self.clean_rpmhome()
 
@@ -70,11 +68,11 @@ class Builder:
     )
 
     if not len(spec_paths):
-      raise FileNotFoundError(('Cannot find spec in %s', spec_paths))
+      return self.state
 
     for sed_expr in self.spec_fixes:
       sed_cmd = '/usr/sgug/bin/sed -ie "%s" %s' % (sed_expr, spec_paths[0])
-      self.log.info(subprocess.getoutput(sed_cmd))
+      log.info(subprocess.getoutput(sed_cmd))
 
     rpmbuild_process = subprocess.Popen(
       [
@@ -90,13 +88,14 @@ class Builder:
     )
 
     while rpmbuild_process.poll() is None:
-      print(rpmbuild_process.stdout.readline().decode(), end='')
-      print(rpmbuild_process.stderr.readline().decode(), end='')
+      out, err = rpmbuild_process.communicate()
+      print(out.decode(), end='')
+      print(err.decode(), end='')
 
     if (rpmbuild_process.returncode == 0):
       self.handle_get_outrpms(spec_paths[0], pkg_name)
     else:
-      self.log.error('Build failed, skipping %s', pkg_name)
+      log.error('Build failed, skipping %s', pkg_name)
     
     return self.state
 
@@ -107,7 +106,7 @@ class Builder:
     if not len(outfiles):
       return
 
-    self.log.info('Found %d output RPMs' % len(outfiles))
+    log.info('Found %d output RPMs' % len(outfiles))
     self.move_rpms(outfiles)
     for outrpm in outfiles:
       meta = {
